@@ -1,0 +1,183 @@
+name: OGGY_KILLER Build & Release
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:  # Manual trigger from GitHub UI
+
+jobs:
+  build-linux:
+    name: 🐧 Build - Linux (Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🧹 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🛠️ Install GCC & Dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y gcc build-essential
+
+      - name: 🔥 Compile OGGY_KILLER
+        run: |
+          gcc -pthread -O3 -Wall -o oggy src/oggy_destroyer.c
+          chmod +x oggy
+          ls -la oggy
+
+      - name: 📦 Upload Artifact (Linux)
+        uses: actions/upload-artifact@v4
+        with:
+          name: oggy-linux-x86_64
+          path: oggy
+
+  build-windows:
+    name: 🪟 Build - Windows (MinGW)
+    runs-on: windows-latest
+    steps:
+      - name: 🧹 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🛠️ Install MinGW
+        run: |
+          choco install mingw -y
+          echo "C:\ProgramData\chocolatey\lib\mingw\tools\mingw64\bin" >> $env:GITHUB_PATH
+
+      - name: 🔥 Compile OGGY_KILLER
+        run: |
+          gcc -pthread -O3 -Wall -o oggy.exe src/oggy_destroyer.c
+
+      - name: 📦 Upload Artifact (Windows)
+        uses: actions/upload-artifact@v4
+        with:
+          name: oggy-windows-x86_64.exe
+          path: oggy.exe
+
+  build-macos:
+    name: 🍏 Build - macOS
+    runs-on: macos-latest
+    steps:
+      - name: 🧹 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🛠️ Install GCC
+        run: |
+          brew install gcc
+
+      - name: 🔥 Compile OGGY_KILLER
+        run: |
+          gcc-14 -pthread -O3 -Wall -o oggy src/oggy_destroyer.c
+          chmod +x oggy
+
+      - name: 📦 Upload Artifact (macOS)
+        uses: actions/upload-artifact@v4
+        with:
+          name: oggy-macos-arm64
+          path: oggy
+
+  build-static:
+    name: 📦 Build - Static Binary (Musl)
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🧹 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🛠️ Install Musl GCC
+        run: |
+          sudo apt update
+          sudo apt install -y musl-tools
+
+      - name: 🔥 Compile Static OGGY_KILLER
+        run: |
+          musl-gcc -pthread -O3 -Wall -static -o oggy-static src/oggy_destroyer.c
+          chmod +x oggy-static
+          ls -la oggy-static
+
+      - name: 📦 Upload Artifact (Static)
+        uses: actions/upload-artifact@v4
+        with:
+          name: oggy-static-linux
+          path: oggy-static
+
+  build-android:
+    name: 📱 Build - Android (Termux/NDK)
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🧹 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🛠️ Setup Android NDK
+        run: |
+          wget https://dl.google.com/android/repository/android-ndk-r26c-linux.zip
+          unzip android-ndk-r26c-linux.zip
+          export PATH=$PATH:$PWD/android-ndk-r26c/bin
+
+      - name: 🔥 Compile for Android ARM64
+        run: |
+          $PWD/android-ndk-r26c/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang \
+            -pthread -O3 -Wall -o oggy-android src/oggy_destroyer.c
+          chmod +x oggy-android
+
+      - name: 📦 Upload Artifact (Android)
+        uses: actions/upload-artifact@v4
+        with:
+          name: oggy-android-arm64
+          path: oggy-android
+
+  release:
+    name: 🚀 Create GitHub Release
+    needs: [build-linux, build-windows, build-macos, build-static, build-android]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && contains(github.ref, 'refs/tags/')
+    steps:
+      - name: 🧹 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 📥 Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: 📦 Create Release Assets
+        run: |
+          mkdir -p release-assets
+          cp artifacts/oggy-linux-x86_64/oggy release-assets/oggy-linux
+          cp artifacts/oggy-windows-x86_64.exe/oggy.exe release-assets/oggy-windows.exe
+          cp artifacts/oggy-macos-arm64/oggy release-assets/oggy-macos
+          cp artifacts/oggy-static-linux/oggy-static release-assets/oggy-static
+          cp artifacts/oggy-android-arm64/oggy-android release-assets/oggy-android
+          cd release-assets && chmod +x *
+
+      - name: 🚀 Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: release-assets/*
+          name: "OGGY_KILLER v${{ github.ref_name }}"
+          body: |
+            🔥 **OGGY_KILLER - CHUMT KA DARINDA** 🔥
+
+            ## 📦 Downloads
+            - 🐧 Linux: `oggy-linux`
+            - 🪟 Windows: `oggy-windows.exe`
+            - 🍏 macOS: `oggy-macos`
+            - 📦 Static Binary: `oggy-static`
+            - 📱 Android: `oggy-android`
+
+            ## 🚀 Usage
+            ```bash
+            chmod +x oggy-linux
+            ./oggy-linux <IP> <PORT> <TIME>
+            ```
+
+            ## 💀 Features
+            - 200 Threads (UDP + TCP + HTTP)
+            - Real-time progress
+            - Attack counter
+            - OGGY signature payload
+
+            👿 **CHUMT KA DARINDA is here!**
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
